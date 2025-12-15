@@ -1,24 +1,19 @@
-"""import os
 import telebot
-from telebot import types, apihelper
+from telebot import types
 import sqlite3
 import re
+import os
 
-# ====== Environment Variables ======
+# ====== Константтар ======
 TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID"))
-KASPI_LINK = os.environ.get("KASPI_LINK")
-HALYK_LINK = os.environ.get("HALYK_LINK")
-
-# ====== Webhook өшіру ======
-apihelper.delete_webhook(TOKEN)
 
 bot = telebot.TeleBot(TOKEN)
 
-# ====== SQLite деректер базасы ======
-conn = sqlite3.connect("orders.db", check_same_thread=False)
+# ====== SQLite дерекқоры ======
+DB_PATH = os.path.join(os.getcwd(), "orders.db")
+conn = sqlite3.connect(DB_PATH, check_same_thread=False)
 cursor = conn.cursor()
-
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,20 +63,6 @@ def show_cart(chat_id):
         total = sum(prices[i] for i in user_cart[chat_id])
         bot.send_message(chat_id, f"🛒 Себет: {services}\n💰 Жалпы: {total} тг")
 
-# ====== Төлем көрсету ======
-def show_payment(chat_id, total):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("💳 Kaspi", url=KASPI_LINK))
-    markup.add(types.InlineKeyboardButton("🏦 Halyk Bank", url=HALYK_LINK))
-    bot.send_message(chat_id, f"💰 Төлем: {total} тг\nТөлем әдісін таңдаңыз 👇", reply_markup=markup)
-
-    # Төлем аяқталғанын хабарлау батырмасы
-    markup2 = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup2.add("Төлем аяқталды")
-    bot.send_message(chat_id, "Төлемді аяқтағаннан кейін осы батырманы басыңыз", reply_markup=markup2)
-
-    save_order(chat_id, total)
-
 # ====== Тапсырысты сақтау ======
 def save_order(chat_id, total):
     services = ", ".join(user_cart[chat_id])
@@ -99,7 +80,6 @@ def save_order(chat_id, total):
     order_id = cursor.fetchone()[0]
 
     bot.send_message(chat_id, f"✅ Тапсырыс қабылданды! Сіздің нөміріңіз: {order_id}")
-
     bot.send_message(ADMIN_ID,
         f"📥 ЖАҢА ТАПСЫРЫС #{order_id}\n"
         f"👤 {name}\n"
@@ -109,22 +89,19 @@ def save_order(chat_id, total):
         f"💰 {total} тг"
     )
 
-    # Reset
     user_cart[chat_id] = []
     user_state[chat_id] = "select_service"
 
-# ====== Бот хабарларын өңдеу ======
+# ====== Хабарларды өңдеу ======
 @bot.message_handler(func=lambda message: True)
 def handle(message):
     chat_id = message.chat.id
     text = message.text
 
-    # Себет
     if text == "🛒 Себет":
         show_cart(chat_id)
         return
 
-    # Қызмет таңдау
     if user_state.get(chat_id) == "select_service":
         if text in prices:
             user_cart[chat_id].append(text)
@@ -137,13 +114,11 @@ def handle(message):
             user_state[chat_id] = "ask_name"
             bot.send_message(chat_id, "👤 Атыңызды жазыңыз:")
 
-    # Атын сұрау
     elif user_state.get(chat_id) == "ask_name":
         user_name[chat_id] = text
         user_state[chat_id] = "ask_phone"
         bot.send_message(chat_id, "📞 Телефон номеріңізді жазыңыз:")
 
-    # Телефон сұрау
     elif user_state.get(chat_id) == "ask_phone":
         if not re.match(r'^\+7\d{10}$', text):
             bot.send_message(chat_id, "⚠️ Телефонды +7XXXXXXXXXX форматында жазыңыз")
@@ -152,7 +127,6 @@ def handle(message):
         user_state[chat_id] = "ask_age"
         bot.send_message(chat_id, "Қанша жастасыз? (санмен)")
 
-    # Жас сұрау
     elif user_state.get(chat_id) == "ask_age":
         if not text.isdigit():
             bot.send_message(chat_id, "⚠️ Санмен жазыңыз")
@@ -172,13 +146,12 @@ def handle(message):
                 "Сіз 18-ге толмағансыз.\nАта-анаңыздың картасынан төлейсіз бе?",
                 reply_markup=markup)
         else:
-            show_payment(chat_id, total)
+            save_order(chat_id, total)
 
-    # Ата-ана төлемі
     elif user_state.get(chat_id) == "parent_pay":
         total = sum(prices[i] for i in user_cart[chat_id])
         if text == "ИӘ":
-            show_payment(chat_id, total)
+            save_order(chat_id, total)
         else:
             bot.send_message(chat_id,
                 "📩 Тапсырысыңыз қабылданды.\nАдмин сізбен хабарласады.")
@@ -214,127 +187,5 @@ def admin_search(message):
         text = "\n".join([f"#{o[0]} {o[1]} | {o[2]} | {o[3]} тг | {o[4]} | {o[5]} тг" for o in orders])
         bot.send_message(ADMIN_ID, text)
 
-# ====== 24/7 POLLING ======
-bot.polling(non_stop=True)"""
-import os
-import telebot
-from telebot import types
-import sqlite3
-import re
-from flask import Flask, request
-
-# ====== Environment Variables ======
-TOKEN = os.environ.get("BOT_TOKEN")
-ADMIN_ID = int(os.environ.get("ADMIN_ID"))
-KASPI_LINK = os.environ.get("KASPI_LINK")
-HALYK_LINK = os.environ.get("HALYK_LINK")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # https://<your-service>.onrender.com/<TOKEN>
-
-bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
-
-# ====== SQLite ======
-conn = sqlite3.connect("orders.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,
-    phone TEXT,
-    age INTEGER,
-    services TEXT,
-    total INTEGER
-)
-""")
-conn.commit()
-
-prices = {
-    "🤖 Telegram бот": 7000,
-    "🛒 Тапсырыс қабылдау": 3000,
-    "📊 Баға есептейтін бот": 5000
-}
-
-user_cart = {}
-user_state = {}
-user_name = {}
-user_phone = {}
-user_age = {}
-
-# ====== Бот функциялары (Polling кодының бәрі сол күйінде) ======
-def main_menu(chat_id):
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    for s in prices:
-        markup.add(s)
-    markup.add("📩 Жалғастыру", "🛒 Себет")
-    bot.send_message(chat_id, "Қызметті таңдаңыз 👇", reply_markup=markup)
-
-def show_cart(chat_id):
-    if chat_id not in user_cart or not user_cart[chat_id]:
-        bot.send_message(chat_id, "🛒 Сіздің себетіңіз бос")
-    else:
-        services = ", ".join(user_cart[chat_id])
-        total = sum(prices[i] for i in user_cart[chat_id])
-        bot.send_message(chat_id, f"🛒 Себет: {services}\n💰 Жалпы: {total} тг")
-
-def show_payment(chat_id, total):
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("💳 Kaspi", url=KASPI_LINK))
-    markup.add(types.InlineKeyboardButton("🏦 Halyk Bank", url=HALYK_LINK))
-    bot.send_message(chat_id, f"💰 Төлем: {total} тг\nТөлем әдісін таңдаңыз 👇", reply_markup=markup)
-
-def save_order(chat_id, total):
-    services = ", ".join(user_cart[chat_id])
-    age = user_age.get(chat_id, 0)
-    name = user_name.get(chat_id, "")
-    phone = user_phone.get(chat_id, "")
-
-    cursor.execute(
-        "INSERT INTO orders (name, phone, age, services, total) VALUES (?, ?, ?, ?, ?)",
-        (name, phone, age, services, total)
-    )
-    conn.commit()
-
-    cursor.execute("SELECT last_insert_rowid()")
-    order_id = cursor.fetchone()[0]
-
-    bot.send_message(chat_id, f"✅ Тапсырыс қабылданды! Сіздің нөміріңіз: {order_id}")
-    bot.send_message(ADMIN_ID,
-        f"📥 ЖАҢА ТАПСЫРЫС #{order_id}\n"
-        f"👤 {name}\n"
-        f"📞 {phone}\n"
-        f"🧒 Жасы: {age}\n"
-        f"🛒 {services}\n"
-        f"💰 {total} тг"
-    )
-
-    user_cart[chat_id] = []
-    user_state[chat_id] = "select_service"
-
-# ====== Telegram update өңдеуші ======
-@bot.message_handler(func=lambda message: True)
-def handle(message):
-    chat_id = message.chat.id
-    text = message.text
-    # (Сіздің Polling кодтағы handle функциясының ішіндегі логикасы осы жерде сол күйінде қалады)
-    # Себет, қызмет таңдау, жас, ата-ана төлемі т.б.
-
-# ====== Webhook URL ======
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    json_str = request.get_data().decode("utf-8")
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return "!", 200
-
-@app.route("/")
-def index():
-    return "Bot is running!"
-
-# ====== Webhook орнату ======
-bot.remove_webhook()
-bot.set_webhook(url=WEBHOOK_URL)
-
-# ====== Run Flask (Render порты) ======
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+# ====== 24/7 Polling ======
+bot.polling(non_stop=True)
