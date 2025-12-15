@@ -5,7 +5,7 @@ import sqlite3
 import re
 
 # ====== Environment Variables ======
-TOKEN = os.environ.get("TOKEN")
+TOKEN = os.environ.get("BOT_TOKEN")
 ADMIN_ID = int(os.environ.get("ADMIN_ID"))
 KASPI_LINK = os.environ.get("KASPI_LINK")
 HALYK_LINK = os.environ.get("HALYK_LINK")
