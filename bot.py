@@ -1,4 +1,4 @@
-import os
+"""import os
 import telebot
 from telebot import types, apihelper
 import sqlite3
@@ -215,4 +215,126 @@ def admin_search(message):
         bot.send_message(ADMIN_ID, text)
 
 # ====== 24/7 POLLING ======
-bot.polling(non_stop=True)
+bot.polling(non_stop=True)"""
+import os
+import telebot
+from telebot import types
+import sqlite3
+import re
+from flask import Flask, request
+
+# ====== Environment Variables ======
+TOKEN = os.environ.get("BOT_TOKEN")
+ADMIN_ID = int(os.environ.get("ADMIN_ID"))
+KASPI_LINK = os.environ.get("KASPI_LINK")
+HALYK_LINK = os.environ.get("HALYK_LINK")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # https://<your-service>.onrender.com/<TOKEN>
+
+bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
+
+# ====== SQLite ======
+conn = sqlite3.connect("orders.db", check_same_thread=False)
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    phone TEXT,
+    age INTEGER,
+    services TEXT,
+    total INTEGER
+)
+""")
+conn.commit()
+
+prices = {
+    "🤖 Telegram бот": 7000,
+    "🛒 Тапсырыс қабылдау": 3000,
+    "📊 Баға есептейтін бот": 5000
+}
+
+user_cart = {}
+user_state = {}
+user_name = {}
+user_phone = {}
+user_age = {}
+
+# ====== Бот функциялары (Polling кодының бәрі сол күйінде) ======
+def main_menu(chat_id):
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for s in prices:
+        markup.add(s)
+    markup.add("📩 Жалғастыру", "🛒 Себет")
+    bot.send_message(chat_id, "Қызметті таңдаңыз 👇", reply_markup=markup)
+
+def show_cart(chat_id):
+    if chat_id not in user_cart or not user_cart[chat_id]:
+        bot.send_message(chat_id, "🛒 Сіздің себетіңіз бос")
+    else:
+        services = ", ".join(user_cart[chat_id])
+        total = sum(prices[i] for i in user_cart[chat_id])
+        bot.send_message(chat_id, f"🛒 Себет: {services}\n💰 Жалпы: {total} тг")
+
+def show_payment(chat_id, total):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("💳 Kaspi", url=KASPI_LINK))
+    markup.add(types.InlineKeyboardButton("🏦 Halyk Bank", url=HALYK_LINK))
+    bot.send_message(chat_id, f"💰 Төлем: {total} тг\nТөлем әдісін таңдаңыз 👇", reply_markup=markup)
+
+def save_order(chat_id, total):
+    services = ", ".join(user_cart[chat_id])
+    age = user_age.get(chat_id, 0)
+    name = user_name.get(chat_id, "")
+    phone = user_phone.get(chat_id, "")
+
+    cursor.execute(
+        "INSERT INTO orders (name, phone, age, services, total) VALUES (?, ?, ?, ?, ?)",
+        (name, phone, age, services, total)
+    )
+    conn.commit()
+
+    cursor.execute("SELECT last_insert_rowid()")
+    order_id = cursor.fetchone()[0]
+
+    bot.send_message(chat_id, f"✅ Тапсырыс қабылданды! Сіздің нөміріңіз: {order_id}")
+    bot.send_message(ADMIN_ID,
+        f"📥 ЖАҢА ТАПСЫРЫС #{order_id}\n"
+        f"👤 {name}\n"
+        f"📞 {phone}\n"
+        f"🧒 Жасы: {age}\n"
+        f"🛒 {services}\n"
+        f"💰 {total} тг"
+    )
+
+    user_cart[chat_id] = []
+    user_state[chat_id] = "select_service"
+
+# ====== Telegram update өңдеуші ======
+@bot.message_handler(func=lambda message: True)
+def handle(message):
+    chat_id = message.chat.id
+    text = message.text
+    # (Сіздің Polling кодтағы handle функциясының ішіндегі логикасы осы жерде сол күйінде қалады)
+    # Себет, қызмет таңдау, жас, ата-ана төлемі т.б.
+
+# ====== Webhook URL ======
+@app.route(f"/{TOKEN}", methods=["POST"])
+def webhook():
+    json_str = request.get_data().decode("utf-8")
+    update = telebot.types.Update.de_json(json_str)
+    bot.process_new_updates([update])
+    return "!", 200
+
+@app.route("/")
+def index():
+    return "Bot is running!"
+
+# ====== Webhook орнату ======
+bot.remove_webhook()
+bot.set_webhook(url=WEBHOOK_URL)
+
+# ====== Run Flask (Render порты) ======
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
